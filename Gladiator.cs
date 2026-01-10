@@ -52,44 +52,50 @@ public class Gladiator : MonoBehaviour
 
     // --- FIRLATMA (PROJECTILE) SİSTEMİ ---
     
-    public void ShootProjectile(string targetTag, int dmg)
+    public void ShootProjectile(string targetTag, float damage)
     {
-        // 1. Animasyon ve Ses
-        TriggerAttack(); 
+        // DÜZELTME 1: 'projectilePrefab' yerine 'arrowPrefab' kullanıldı.
+        GameObject projectile = Instantiate(arrowPrefab, firePoint.position, Quaternion.identity);
 
-        // 2. Pozisyonu Al
-        Vector3 spawnPos = (firePoint != null) ? firePoint.position : transform.position;
-        
-        // 🔥 YENİ YÖN AYARI (Kesin Çözüm) 🔥
-        Quaternion spawnRot;
+        // 2. Hedefi Bul (Rakip nerede?)
+        GameObject target = GameObject.FindGameObjectWithTag(targetTag);
 
-        // Eğer bu scripti çalıştıran kişi "Enemy" ise;
-        if (gameObject.CompareTag("Enemy"))
+        if (target != null)
         {
-            // Oku 180 derece döndür (Sola baksın)
-            spawnRot = Quaternion.Euler(0, 0, 180f);
-        }
-        else
-        {
-            // Player ise düz kalsın (Sağa baksın)
-            spawnRot = Quaternion.identity; // (0,0,0) demektir
-        }
+            // 3. Yönü Hesapla: (Hedef Konumu - Namlu Konumu)
+            Vector2 direction = (target.transform.position - firePoint.position).normalized;
 
-        // 3. Oku Yarat
-        if (arrowPrefab != null)
-        {
-            GameObject arrow = Instantiate(arrowPrefab, spawnPos, spawnRot);
-            
-            Projectile p = arrow.GetComponent<Projectile>();
-            if (p != null)
+            // 4. Mermiyi o yöne fırlat
+            Rigidbody2D rb = projectile.GetComponent<Rigidbody2D>();
+            if (rb != null)
             {
-                p.damage = dmg;
-                p.targetTag = targetTag;
+                // Hızı burada ayarlıyoruz (15f hızında)
+                // Not: Her Unity sürümünde çalışması için 'velocity' kullanıldı.
+                rb.linearVelocity = direction * 15f; 
+            }
+
+            // 5. (İsteğe Bağlı) Okun görsel açısını da hedefe döndür
+            float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg;
+            projectile.transform.rotation = Quaternion.Euler(new Vector3(0, 0, angle));
+
+            // 6. Hasar bilgisini mermiye yükle
+            Projectile projScript = projectile.GetComponent<Projectile>();
+            if (projScript != null)
+            {
+                // DÜZELTME 2: (int) ekleyerek float'ı int'e çevirdik.
+                projScript.damage = (int)damage; 
+                projScript.targetTag = targetTag; // Kimi vuracağını söyle
             }
         }
         else
         {
-            Debug.LogWarning("Arrow Prefab atanmamış!");
+            // Hedef yoksa (Yedek plan) FirePoint yönüne gitsin
+            Rigidbody2D rb = projectile.GetComponent<Rigidbody2D>();
+            if (rb != null)
+            {
+                 if (transform.localScale.x < 0) rb.linearVelocity = Vector2.left * 15f;
+                 else rb.linearVelocity = Vector2.right * 15f;
+            }
         }
     }
 
@@ -130,7 +136,6 @@ public class Gladiator : MonoBehaviour
     }
 
     // 2. Saldırı Animasyonu ve Sesi (Tetikleyici)
-    // Hem Melee saldırıda hem de Ok atarken bunu çağırabiliriz
     public void TriggerAttack()
     {
         if (animator != null)
