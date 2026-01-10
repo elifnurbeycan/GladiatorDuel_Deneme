@@ -37,26 +37,25 @@ public class Projectile : MonoBehaviour
 
     void HandleHit(GameObject hitObj)
     {
-        // 1. Kendi sahibimize çarptıysak yoksay
-        if (!string.IsNullOrEmpty(targetTag) && !hitObj.CompareTag(targetTag))
+        // 1. Önce çarptığım şey canlı bir "Gladiator" mı diye bak
+        Gladiator hitGladiator = hitObj.GetComponent<Gladiator>();
+
+        // Eğer çarptığım şey Gladyatör DEĞİLSE (Arka plan, duvar vs.) -> SESSİZCE ÇIK
+        if (hitGladiator == null) return;
+
+        // 2. Gladyatör ama benim HEDEFİM değilse (Yani oku atan kişi kendisine çarptıysa)
+        if (!hitObj.CompareTag(targetTag))
         {
-            Debug.Log("-> Kendi sahibime çarptım, yoksayıyorum.");
+            // İstersen buraya log koyabilirsin ama gerek yok, sessizce geçsin.
+            // Debug.Log("Kendi kendime çarptım, yoksayıyorum.");
             return; 
         }
 
-        // 2. Hedefi bulduysak hasar ver
-        Gladiator target = hitObj.GetComponent<Gladiator>();
-        if (target == null) target = hitObj.GetComponentInParent<Gladiator>();
-
-        if (target != null)
-        {
-            Debug.Log("-> Hedef (Gladiator) bulundu! Hasar veriliyor.");
-            target.TakeDamage(damage);
-            Destroy(gameObject); // Oku yok et
-        }
-        else
-        {
-            Debug.Log("-> Çarptığım şeyde 'Gladiator' scripti yok.");
-        }
+        // 3. Buraya geldiysek HEDEFİ VURDUK demektir!
+        Debug.Log("-> TAM İSABET! Hasar veriliyor: " + hitObj.name);
+        hitGladiator.TakeDamage(damage);
+        
+        // Oku yok et
+        Destroy(gameObject); 
     }
 }
