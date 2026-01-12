@@ -33,6 +33,15 @@ public class EnemyAgent : MonoBehaviour
         brain.RegisterAction("MeleeAttack",  _ => AttemptAction(3), 0);
         brain.RegisterAction("Sleep",        _ => AttemptAction(4), 0);
         brain.RegisterAction("ArmorUp",      _ => AttemptAction(5), 0);
+
+        // 🔥🔥🔥 EKLEMEN GEREKEN KISIM BURASI 🔥🔥🔥
+        
+        // Eğer Eğitim Modu kapalıysa VE Menüden "Yapay Zeka Yükle" denildiyse:
+        if (!GameManager.Instance.isTrainingMode && GameManager.useTrainedAI)
+        {
+            brain.exploration = 0f; // SIFIR RASTGELELİK! Robot gibi oyna.
+            Debug.Log("⚠️ Ciddiyet Modu Aktif: Exploration %0 yapıldı. Şaka yok!");
+        }
     }
 
     public void StartEnemyTurn()
@@ -46,7 +55,7 @@ public class EnemyAgent : MonoBehaviour
     {
         yield return new WaitForSeconds(decisionDelay);
 
-        // 1. SENSÖRLER
+        // 1. SENSÖRLER (Her durumda sensörleri oku ki brain state bozulmasın)
         float distState = (float)GameManager.Instance.currentDistance; 
         float myManaState = enemy.currentMana > 20 ? 1f : 0f;          
         float myAmmoState = enemy.currentAmmo > 0 ? 1f : 0f;           
@@ -55,15 +64,32 @@ public class EnemyAgent : MonoBehaviour
         List<float> sensors = new List<float> { distState, myManaState, myAmmoState, myHPState };
         brain.SetInputs(sensors);
 
-        // 2. KARAR
-        int actionIndex = brain.DecideAction();
+        // 2. KARAR (PROJE İSTERİNE GÖRE SEÇİM)
+        int actionIndex = 0;
+
+        if (GameManager.useTrainedAI)
+        {
+            // Eğer "Yapay Zeka Yükle" dendi ise: BEYNİ KULLAN
+            actionIndex = brain.DecideAction();
+        }
+        else
+        {
+            // Eğer dosya yüklenmediyse: RASTGELE OYNA
+            actionIndex = Random.Range(0, 6); // 0-5 arası rastgele sayı
+            
+            // Log'a da yazalım ki hoca görsün
+            if(GameManager.Instance.isTrainingMode == false) // Sadece oyun sırasında log bas
+                 Debug.Log("AI Yüklü Değil - Rastgele Oynuyor: " + actionIndex);
+        }
 
         // 3. MANTIK KONTROLÜ
         bool isLogicValid = CheckActionLogic(actionIndex);
 
         if (!isLogicValid)
         {
-            brain.Punish(10f); // Saçma hamleye ceza
+            // Eğer eğitilmiş moddaysa ceza ver, yoksa sadece geç
+            if (GameManager.useTrainedAI) brain.Punish(10f); 
+            
             ForceRandomValidMove();
         }
         else
@@ -72,7 +98,7 @@ public class EnemyAgent : MonoBehaviour
         }
 
         // 4. SONUÇ VE TUR BİTİRME
-        yield return new WaitForSeconds(1.5f); // Animasyon bekleme süresini kıstım
+        yield return new WaitForSeconds(1.5f); // 1.5 saniye bekle (Okun çarpması için)
         EvaluateResult();
 
         if (GameManager.Instance.isTrainingMode)
@@ -119,11 +145,11 @@ public class EnemyAgent : MonoBehaviour
         }
     }
 
-    // 🔥 BURASI ÇOK ÖNEMLİ: STRATEJİK YÖNLENDİRME 🔥
+    // AKSİYONLARI UYGULA
     private void AttemptAction(int actionCode)
     {
         bool amIPlayerSide = (GameManager.Instance.player == enemy);
-        bool isLowHP = enemy.currentHP < (enemy.maxHP * 0.4f); // Canım %40'ın altında mı?
+        bool isLowHP = enemy.currentHP < (enemy.maxHP * 0.4f); 
 
         switch (actionCode)
         {
@@ -132,9 +158,8 @@ public class EnemyAgent : MonoBehaviour
                 GameManager.Instance.MoveCloser(amIPlayerSide); 
                 enemy.SpendMana(4); 
                 
-                // Canım çoksa ve yaklaşıyorsam -> AFERİN (Cesaret Ödülü)
+                // Ödül mantığı
                 if (!isLowHP) brain.Reward(0.2f);
-                // Canım azsa ve düşmana koşuyorsam -> HAYIR (Risk Cezası)
                 else brain.Punish(0.2f);
                 break;
 
@@ -143,9 +168,8 @@ public class EnemyAgent : MonoBehaviour
                 GameManager.Instance.MoveAway(amIPlayerSide); 
                 enemy.SpendMana(4); 
                 
-                // Canım azsa ve kaçıyorsam -> AFERİN (Hayatta Kalma Ödülü)
+                // Ödül mantığı
                 if (isLowHP) brain.Reward(0.5f);
-                // Canım full ve kaçıyorsam -> HAYIR (Korkaklık Cezası)
                 else brain.Punish(0.2f);
                 break;
 
@@ -153,7 +177,6 @@ public class EnemyAgent : MonoBehaviour
                 GameManager.Instance.uiManager.UpdateBattleLog("Agent Ok Attı"); 
                 enemy.currentAmmo--; enemy.SpendMana(20); 
                 enemy.ShootProjectile("Player", Random.Range(15, 21)); 
-                // Saldırıya her zaman ufak bir teşvik verelim
                 brain.Reward(0.1f);
                 break;
 
@@ -161,37 +184,28 @@ public class EnemyAgent : MonoBehaviour
                 GameManager.Instance.uiManager.UpdateBattleLog("Agent Kılıç Vurdu");
                 enemy.SpendMana(10); 
                 enemy.TriggerAttack();
-
-                // ARTIK ISKA YOK! HER ZAMAN VURUR ⚔️
-                // Hasar aralığı sabit kalsın (10-15 arası)
                 int damage = Random.Range(10, 16); 
                 player.TakeDamage(damage);
-
-                // Vurduğu için ödül veriyoruz
                 brain.Reward(0.2f); 
                 break; 
 
             case 4: // Sleep - İyileşme
                 GameManager.Instance.uiManager.UpdateBattleLog("Agent İyileşiyor");
-    
-                // Değerleri düşür:
-                enemy.RestoreMana(20); // Manası yavaş dolsun
-                enemy.RestoreHP(5);    // Canı çok az dolsun (Rakip 10 vurursa, uyusa bile 5 zarar eder)
-
-                // Sadece gerçekten zordaysa ödül ver (Canı %40 altındaysa)
+                enemy.RestoreMana(20); 
+                enemy.RestoreHP(5);    
                 if (isLowHP || enemy.currentMana < 20) brain.Reward(0.5f);
-                else brain.Punish(0.1f); // Keyfi uyuyorsa hafif ceza ver
+                else brain.Punish(0.1f); 
                 break;
 
             case 5: // Armor
                 GameManager.Instance.uiManager.UpdateBattleLog("Agent Savunma Aldı");
                 enemy.SpendMana(25); enemy.ActivateArmorUp(2);
-                if (isLowHP) brain.Reward(0.3f); // Can azken defans mantıklı
+                if (isLowHP) brain.Reward(0.3f); 
                 break;
         }
     }
 
-    // 🔥 ÖDÜL SİSTEMİ: SONUCA GÖRE BÜYÜK PUAN 🔥
+    // ÖDÜL DEĞERLENDİRME
     private void EvaluateResult()
     {
         if (player.currentHP <= 0) { brain.Reward(150f); return; } // KAZANMA
@@ -202,32 +216,25 @@ public class EnemyAgent : MonoBehaviour
 
         float turnReward = 0f;
 
-        // 1. VURMA PUANI (Daha yüksek yaptık ki saldırmayı sevsin)
         if (damageDealt > 0) turnReward += damageDealt * 3.0f;
         
-        // 2. HASAR YEME CEZASI
         if (damageTaken > 0)
         {
-            // Canım azsa hasar yemek felakettir (4 kat ceza)
-            // Canım çoksa o kadar dert değil (2 kat ceza)
             float survivalFactor = (enemy.currentHP < 30) ? 4.0f : 2.0f;
             turnReward -= damageTaken * survivalFactor;
         }
         else if (damageTaken < 0) 
         {
-            // İyileştiysem (Negatif hasar) ödül ver
             turnReward += Mathf.Abs(damageTaken) * 1.5f;
         }
 
-        // 3. CAN FARKI AVANTAJI
         float hpGap = enemy.currentHP - player.currentHP;
         turnReward += hpGap * 0.2f;
 
-        // Ödülü uygula
         if (turnReward > 0) brain.Reward(turnReward);
         else 
         {
-            if (turnReward == 0) turnReward = -0.5f; // Boş geçmek hafif kötüdür
+            if (turnReward == 0) turnReward = -0.5f; 
             brain.Punish(Mathf.Abs(turnReward));
         }
     }
